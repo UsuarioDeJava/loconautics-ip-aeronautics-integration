@@ -12,6 +12,10 @@ Quem faz a travessia é o *straddle* do IP Aero, que leva a nave do trem de um m
 
 > Add-on não oficial. Ele não tem ligação com os autores do Loconautics, do Immersive Portals: Aeronautics, do Sable nem do Create.
 
+## Demonstração
+
+[![Vídeo de demonstração: trens do Loconautics atravessando portais do Immersive Portals: Aeronautics](https://img.youtube.com/vi/HzJHE6TulEA/maxresdefault.jpg)](https://www.youtube.com/watch?v=HzJHE6TulEA)
+
 ---
 
 ## O que ele faz
