@@ -10,7 +10,7 @@ The crossing itself is done by IP Aero's *straddle*, which carries the train's s
 
 ## Demo
 
-[![Demo video: Loconautics trains crossing Immersive Portals: Aeronautics portals](https://img.youtube.com/vi/HzJHE6TulEA/maxresdefault.jpg)](https://www.youtube.com/watch?v=HzJHE6TulEA)
+[![Demo video: Loconautics trains crossing Immersive Portals: Aeronautics portals](https://img.youtube.com/vi/HzJHE6TulEA/sddefault.jpg)](https://www.youtube.com/watch?v=HzJHE6TulEA)
 
 ---
 
