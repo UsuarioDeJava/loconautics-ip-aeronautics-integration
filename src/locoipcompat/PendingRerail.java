@@ -27,7 +27,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
@@ -50,6 +52,8 @@ public final class PendingRerail {
     private static final Map<UUID, SableTrain> CAPTURED = new ConcurrentHashMap<>();
     /** id da nave -> bloco central do plot antes da mudança (os truques guardam posição relativa a ele) */
     private static final Map<UUID, BlockPos> OLD_CENTER = new ConcurrentHashMap<>();
+    /** id do vagão -> trilho que cada truque tinha antes da mudança (chave: posição nova do truque) */
+    private static final Map<UUID, Map<BlockPos, RailCarriage>> OLD_RAILS = new ConcurrentHashMap<>();
     /** id do vagão -> estado de marcha antes da travessia */
     private static final Map<UUID, Before> BEFORE = new ConcurrentHashMap<>();
     /** id do vagão -> tick em que chegou ao mundo novo */
@@ -249,6 +253,7 @@ public final class PendingRerail {
                 if (why == null) {
                     forget(id);
                     it.remove();
+                    afterConsistSeated(car);
                 } else if (age >= GIVE_UP_AFTER) {
                     // deixa o re-encaixe automático do próprio Loconautics assumir quando o trem parar
                     car.setDerailedQuiet(true);
@@ -267,8 +272,27 @@ public final class PendingRerail {
         }
     }
 
+    /** Quando o último vagão do trem foi assentado: confere desvios que ficaram entre os truques. */
+    private static void afterConsistSeated(SableTrain car) {
+        try {
+            List<SableTrain> consist = SableTrainSpawner.chainCars(car.level(), car.car().subLevelId());
+            if (consist == null || consist.isEmpty()) {
+                consist = List.of(car);
+            }
+            for (SableTrain member : consist) {
+                if (PENDING.containsKey(member.id())) {
+                    return; // ainda falta assentar algum vagão; o último faz a conferência
+                }
+            }
+            StraddledJunctions.register(consist, car);
+        } catch (Throwable t) {
+            LOG.warn("[LocoIP] não deu para conferir os desvios do trem {}: {}", shortId(car.id()), t.toString());
+        }
+    }
+
     private static void forget(UUID trainId) {
         LAST_WHY.remove(trainId);
+        OLD_RAILS.remove(trainId);
         BEFORE.remove(trainId);
     }
 
@@ -297,7 +321,10 @@ public final class PendingRerail {
         }
         Before before = BEFORE.get(car.id());
         Vector3d anchor = SableTrainSpawner.bogeyAnchorWorld(sub, c);
-        Vec3 facing = SableTrainSpawner.currentFacing(sub, c);
+        // para onde o vagão aponta, pelo referencial que ele tinha antes (vetor local da nave). Sem carriage, o
+        // Loconautics usa a direção do trilho, que pode estar ao contrário: vagão de um truque só era assentado
+        // virado 180°, a tração empurrava para trás e ele voltava pelo portal sem parar
+        Vec3 facing = facingOf(sub, c, before);
         Object hit = findRailBelow(level, BlockPos.containing(anchor.x, anchor.y, anchor.z), facing);
         if (hit == null) {
             return "nenhum trilho embaixo do vagão";
@@ -322,7 +349,29 @@ public final class PendingRerail {
 
         SeatBlend.begin(sub, seat.origin(), seat.orient());
         SableTrainSpawner.writePose(level, sub, seat.origin(), seat.orient());
-        car.relocate(seat.carriage(), seat.bogeys()); // zera velocidade, acelerador e estado de estação
+        // Se o trilho passa pelo portal (portal de trilho do Create), os trilhos "virtuais" dos truques já
+        // atravessaram junto e estão no mundo novo, no lado de cada desvio que o trem escolheu (inclusive com o
+        // comando de virar). Esses valem mais que o trilho embaixo da nave, que chega reta: são mantidos.
+        ResourceKey<Level> dim = level.dimension();
+        Map<BlockPos, RailCarriage> olds = OLD_RAILS.remove(car.id());
+        List<SableTrain.Bogey> seated = new ArrayList<>();
+        int kept = 0;
+        for (SableTrain.Bogey sb : seat.bogeys()) {
+            RailCarriage old = olds == null ? null : olds.get(sb.localPos());
+            if (onDimension(old, dim)) {
+                old.clearPortal();
+                seated.add(new SableTrain.Bogey(sb.localPos(), old));
+                kept++;
+            } else {
+                seated.add(sb);
+            }
+        }
+        RailCarriage span = seat.carriage();
+        if (kept > 0 && kept == seated.size() && before != null && onDimension(before.carriage(), dim)) {
+            span = before.carriage();
+            span.clearPortal();
+        }
+        car.relocate(span, seated); // zera velocidade, acelerador e estado de estação
         car.setDerailedQuiet(false);
 
         double sign = 1.0;
@@ -344,10 +393,42 @@ public final class PendingRerail {
         GhostWheelBodies.rebuild(car);
         SableTrainPersistence.persist(car);
         SableTrainSyncPacket.broadcast(car);
-        LOG.info("[LocoIP] vagão {} assentado no trilho em {} ({} truque(s), velocidade {}, acelerador {}{})",
+        LOG.info("[LocoIP] vagão {} assentado no trilho em {} ({} truque(s){}, velocidade {}, acelerador {}{})",
                 shortId(car.id()), level.dimension().location(), seat.bogeys().size(),
+                kept > 0 ? ", " + kept + " no trilho que já tinha atravessado" : "",
                 fmt(car.speed() * 20.0), fmt(car.targetSpeed() * 20.0), sign < 0 ? ", referencial do trilho invertido" : "");
+        if (LocoDebug.enabled()) {
+            debugBogeys(car);
+        }
         return null;
+    }
+
+    /** Diagnóstico: ordem dos truques, aresta e sinal de cada um logo depois de assentar. */
+    private static void debugBogeys(SableTrain car) {
+        try {
+            int i = 0;
+            for (SableTrain.Bogey b : car.car().chain()) {
+                RailCarriage r = b.rail();
+                var lead = r.leading();
+                LOG.info("[LocoIP-debug] vagão {} truque #{} {}: aresta {}>{} pos={} sinal={}",
+                        shortId(car.id()), i++, b.localPos().toShortString(),
+                        lead == null || lead.edge == null ? "?" : lead.edge.node1.getLocation().getLocation(),
+                        lead == null || lead.edge == null ? "?" : lead.edge.node2.getLocation().getLocation(),
+                        lead == null ? "?" : String.format(java.util.Locale.ROOT, "%.2f", lead.position),
+                        r.lastTravelSign());
+            }
+        } catch (Throwable ignored) {
+            // diagnóstico
+        }
+    }
+
+    private static Vec3 facingOf(ServerSubLevel sub, SableTrain.Car c, Before before) {
+        if (before != null && before.carriage() != null && before.carriage().referenceForward() != null) {
+            // currentFacing só lê o referencial do carriage (não mexe no trilho antigo)
+            return SableTrainSpawner.currentFacing(sub,
+                    new SableTrain.Car(c.subLevelId(), before.carriage(), c.bogeys(), c.localLead(), c.localTrail()));
+        }
+        return SableTrainSpawner.currentFacing(sub, c);
     }
 
     /**
@@ -383,14 +464,33 @@ public final class PendingRerail {
         return 1.0;
     }
 
+    /** O trilho (os dois pontos) está todo no mundo indicado? */
+    private static boolean onDimension(RailCarriage rail, ResourceKey<Level> dim) {
+        return rail != null && rail.graph() != null && pointOn(rail.leading(), dim) && pointOn(rail.trailing(), dim);
+    }
+
+    private static boolean pointOn(com.simibubi.create.content.trains.entity.TravellingPoint p, ResourceKey<Level> dim) {
+        return p != null && p.edge != null && p.edge.node1 != null && p.edge.node2 != null
+                && dim.equals(p.edge.node1.getLocation().getDimension())
+                && dim.equals(p.edge.node2.getLocation().getDimension());
+    }
+
     private static void shiftCar(SableTrain train, UUID newId, BlockPos d, BlockPos bogeyDelta) {
         SableTrain.Car old = train.car();
         if (old == null) {
             return;
         }
         List<SableTrain.Bogey> bogeys = new ArrayList<>();
+        Map<BlockPos, RailCarriage> rails = new java.util.HashMap<>();
         for (SableTrain.Bogey b : old.bogeys()) {
-            bogeys.add(new SableTrain.Bogey(b.localPos().offset(bogeyDelta), null));
+            BlockPos moved = b.localPos().offset(bogeyDelta);
+            bogeys.add(new SableTrain.Bogey(moved, null));
+            if (b.rail() != null) {
+                rails.put(moved.immutable(), b.rail());
+            }
+        }
+        if (!rails.isEmpty()) {
+            OLD_RAILS.put(train.id(), rails);
         }
         Vector3dc lead = old.localLead() == null ? null : new Vector3d(old.localLead()).add(d.getX(), d.getY(), d.getZ());
         Vector3dc trail = old.localTrail() == null ? null : new Vector3d(old.localTrail()).add(d.getX(), d.getY(), d.getZ());

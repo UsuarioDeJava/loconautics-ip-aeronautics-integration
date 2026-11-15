@@ -4,7 +4,7 @@ license = "MIT"
 
 [[mods]]
 modId = "loconautics_ip_compat"
-version="0.7.0"
+version="0.8.6"
 displayName = "Loconautics x Immersive Portals Aeronautics"
 description = '''
 Integração local do modpack: trens do Loconautics atravessam portais pelo straddle do Immersive Portals: Aeronautics

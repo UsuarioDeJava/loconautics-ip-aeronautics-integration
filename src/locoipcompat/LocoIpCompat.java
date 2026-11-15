@@ -3,6 +3,7 @@ package locoipcompat;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /**
@@ -16,5 +17,6 @@ public final class LocoIpCompat {
 
     public LocoIpCompat(IEventBus modBus) {
         NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> PendingRerail.tick(event.getServer()));
+        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent event) -> LocoDebug.register(event.getDispatcher()));
     }
 }

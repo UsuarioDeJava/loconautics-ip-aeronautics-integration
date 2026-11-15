@@ -7,7 +7,11 @@
     "TrainPortalCrossingMixin",
     "IPSableBridgeMixin",
     "AnalogControllerServerMixin",
-    "IPShipJointsMixin"
+    "IPShipJointsMixin",
+    "RedstoneLinkPairMixin",
+    "DiagnosticsConfigMixin",
+    "TurnMemoryMixin",
+    "ConsistTurnsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
