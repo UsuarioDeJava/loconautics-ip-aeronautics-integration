@@ -1,0 +1,29 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "loconautics_ip_compat"
+version="0.7.0"
+displayName = "Loconautics x Immersive Portals Aeronautics"
+description = '''
+Integração local do modpack: trens do Loconautics atravessam portais pelo straddle do Immersive Portals: Aeronautics
+(sem o gêmeo/corte do Loconautics) e são recolocados no trilho do outro lado.
+'''
+
+[[mixins]]
+config = "loconautics_ip_compat.mixins.json"
+
+[[dependencies.loconautics_ip_compat]]
+modId = "loconautics"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.loconautics_ip_compat]]
+modId = "ip_aeronautics"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"

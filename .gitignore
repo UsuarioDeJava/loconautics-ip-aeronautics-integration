@@ -1,0 +1,9 @@
+# Pasta de compilação: tem cópias dos jars de outros mods (Create, Sable, IP Aero, Loconautics...).
+# Não vai para o GitHub (é grande e não podemos redistribuir esses jars).
+build/
+
+# Backups locais das versões boas (no GitHub o histórico de commits e as Releases fazem esse papel).
+backups/
+
+# Jars gerados pelo build.sh na raiz (publique a versão boa como Release no GitHub).
+/loconautics_ip_compat-*.jar

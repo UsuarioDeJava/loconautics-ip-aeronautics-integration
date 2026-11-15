@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "locoipcompat.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "TrainPortalCrossingMixin",
+    "IPSableBridgeMixin",
+    "AnalogControllerServerMixin",
+    "IPShipJointsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "AnalogControllerClientMixin"
+  ]
+}
